@@ -48,4 +48,5 @@ export interface LeaderboardEntry {
   name: string;
   time: number;
   date: string;
+  difficulty?: string;
 }

@@ -3,6 +3,7 @@ import { GameState, Player, Obstacle, ObstacleType, GameStats, LeaderboardEntry,
 import { GAME_CONFIG, COLORS } from '../constants';
 import { getSkiCoachCommentary } from '../services/geminiService';
 import { Play, RotateCcw, Trophy, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 // --- Game Logic Helpers ---
 
@@ -44,17 +45,42 @@ export const GameCanvas: React.FC = () => {
 
   // Load Leaderboard on mount
   useEffect(() => {
-    const saved = localStorage.getItem('nileMileLeaderboard');
-    if (saved) {
-      try {
-        setLeaderboard(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load leaderboard");
+    const loadLeaderboard = async () => {
+      if (supabase) {
+        // Load from Supabase
+        const { data, error } = await supabase
+          .from('leaderboard')
+          .select('*')
+          .order('time', { ascending: true })
+          .limit(10);
+
+        if (error) {
+          console.error('Error loading leaderboard:', error);
+        } else if (data) {
+          setLeaderboard(data.map(entry => ({
+            name: entry.name,
+            time: entry.time,
+            date: new Date(entry.created_at).toLocaleDateString(),
+            difficulty: entry.difficulty
+          })));
+        }
+      } else {
+        // Fallback to localStorage
+        const saved = localStorage.getItem('nileMileLeaderboard');
+        if (saved) {
+          try {
+            setLeaderboard(JSON.parse(saved));
+          } catch (e) {
+            console.error("Failed to load leaderboard");
+          }
+        }
       }
-    }
+    };
+
+    loadLeaderboard();
   }, []);
 
-  const saveToLeaderboard = () => {
+  const saveToLeaderboard = async () => {
     if (!playerName.trim() || hasSubmitted) return;
 
     const newEntry: LeaderboardEntry = {
@@ -63,12 +89,50 @@ export const GameCanvas: React.FC = () => {
       date: new Date().toLocaleDateString()
     };
 
-    const newBoard = [...leaderboard, newEntry]
-      .sort((a, b) => a.time - b.time)
-      .slice(0, 5); // Keep top 5
+    if (supabase) {
+      // Save to Supabase
+      const { error } = await supabase
+        .from('leaderboard')
+        .insert({
+          name: newEntry.name,
+          time: newEntry.time,
+          difficulty: difficulty === Difficulty.HARD ? 'HARD' : 'EASY'
+        });
 
-    setLeaderboard(newBoard);
-    localStorage.setItem('nileMileLeaderboard', JSON.stringify(newBoard));
+      if (error) {
+        console.error('Error saving to leaderboard:', error);
+        // Fallback to localStorage on error
+        const newBoard = [...leaderboard, newEntry]
+          .sort((a, b) => a.time - b.time)
+          .slice(0, 10);
+        setLeaderboard(newBoard);
+        localStorage.setItem('nileMileLeaderboard', JSON.stringify(newBoard));
+      } else {
+        // Reload leaderboard from Supabase
+        const { data } = await supabase
+          .from('leaderboard')
+          .select('*')
+          .order('time', { ascending: true })
+          .limit(10);
+
+        if (data) {
+          setLeaderboard(data.map(entry => ({
+            name: entry.name,
+            time: entry.time,
+            date: new Date(entry.created_at).toLocaleDateString(),
+            difficulty: entry.difficulty
+          })));
+        }
+      }
+    } else {
+      // Fallback to localStorage
+      const newBoard = [...leaderboard, newEntry]
+        .sort((a, b) => a.time - b.time)
+        .slice(0, 10);
+      setLeaderboard(newBoard);
+      localStorage.setItem('nileMileLeaderboard', JSON.stringify(newBoard));
+    }
+
     setHasSubmitted(true);
   };
 
@@ -867,8 +931,15 @@ export const GameCanvas: React.FC = () => {
                   <p className="text-slate-500 text-xs italic">No records yet. Be the first!</p>
                 ) : (
                   leaderboard.map((entry, idx) => (
-                    <div key={idx} className={`flex justify-between text-sm font-mono ${entry.name === playerName && hasSubmitted ? 'text-yellow-300' : 'text-slate-300'}`}>
-                      <span>{idx + 1}. {entry.name}</span>
+                    <div key={idx} className={`flex justify-between items-center text-sm font-mono ${entry.name === playerName && hasSubmitted ? 'text-yellow-300' : 'text-slate-300'}`}>
+                      <div className="flex items-center gap-2">
+                        <span>{idx + 1}. {entry.name}</span>
+                        {entry.difficulty && (
+                          <span className={`text-xs px-1 py-0.5 rounded ${entry.difficulty === 'HARD' ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                            {entry.difficulty === 'HARD' ? 'H' : 'E'}
+                          </span>
+                        )}
+                      </div>
                       <span>{(entry.time / 1000).toFixed(2)}s</span>
                     </div>
                   ))
