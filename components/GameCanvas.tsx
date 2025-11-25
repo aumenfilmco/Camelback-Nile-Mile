@@ -15,7 +15,7 @@ const getTrackOffset = (z: number): number => {
 
 export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number>(0);
   
   // React State for UI Overlay
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
