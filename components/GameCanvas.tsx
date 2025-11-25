@@ -799,12 +799,20 @@ export const GameCanvas: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={startGame}
-            className="mt-8 flex items-center gap-2 bg-white hover:bg-slate-200 text-red-900 font-bold py-3 px-8 border-4 border-slate-300 font-retro transition-transform hover:scale-105"
-          >
-            <RotateCcw size={24} /> TRY AGAIN
-          </button>
+          <div className="mt-8 flex flex-col sm:flex-row gap-4 items-center justify-center">
+            <button
+              onClick={startGame}
+              className="flex items-center gap-2 bg-white hover:bg-slate-200 text-red-900 font-bold py-3 px-8 border-4 border-slate-300 font-retro transition-transform hover:scale-105"
+            >
+              <RotateCcw size={24} /> TRY AGAIN
+            </button>
+            <button
+              onClick={() => setGameState(GameState.MENU)}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 border-4 border-slate-500 font-retro transition-transform hover:scale-105"
+            >
+              MENU
+            </button>
+          </div>
         </div>
       )}
 
@@ -869,12 +877,20 @@ export const GameCanvas: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={startGame}
-            className="mt-8 flex items-center gap-2 bg-white hover:bg-slate-200 text-green-900 font-bold py-3 px-8 border-4 border-slate-300 font-retro transition-transform hover:scale-105"
-          >
-            <RotateCcw size={24} /> SKI AGAIN
-          </button>
+          <div className="mt-8 flex flex-col sm:flex-row gap-4 items-center justify-center">
+            <button
+              onClick={startGame}
+              className="flex items-center gap-2 bg-white hover:bg-slate-200 text-green-900 font-bold py-3 px-8 border-4 border-slate-300 font-retro transition-transform hover:scale-105"
+            >
+              <RotateCcw size={24} /> SKI AGAIN
+            </button>
+            <button
+              onClick={() => setGameState(GameState.MENU)}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 border-4 border-slate-500 font-retro transition-transform hover:scale-105"
+            >
+              MENU
+            </button>
+          </div>
         </div>
       )}
     </div>
