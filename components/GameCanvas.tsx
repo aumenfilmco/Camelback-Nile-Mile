@@ -401,14 +401,18 @@ export const GameCanvas: React.FC = () => {
     }
 
     if (state.yeti.active) {
-      const yetiSpeedBonus = difficulty === Difficulty.EASY ? 0.2 : 0.5;
+      const yetiSpeedBonus = difficulty === Difficulty.EASY ? 0.2 : 0.4;
       state.yeti.speed = player.speed + yetiSpeedBonus;
       state.yeti.y += state.yeti.speed;
 
       const dx = player.x - state.yeti.x;
       state.yeti.x += dx * 0.025;
 
-      if (state.yeti.y > player.y - 20) {
+      // Check collision - Yeti must be close in both X and Y
+      const distanceX = Math.abs(player.x - state.yeti.x);
+      const distanceY = Math.abs(player.y - state.yeti.y);
+
+      if (distanceX < 40 && distanceY < 40) {
         state.player.state = 'crashed';
         gameOver("Caught by the Yeti");
         return;
