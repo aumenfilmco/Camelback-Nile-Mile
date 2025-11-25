@@ -337,12 +337,12 @@ export const GameCanvas: React.FC = () => {
     }
 
     if (state.yeti.active) {
-      const yetiSpeedBonus = difficulty === Difficulty.EASY ? 0.2 : 0.6;
+      const yetiSpeedBonus = difficulty === Difficulty.EASY ? 0.2 : 0.5;
       state.yeti.speed = player.speed + yetiSpeedBonus;
       state.yeti.y += state.yeti.speed;
 
       const dx = player.x - state.yeti.x;
-      state.yeti.x += dx * 0.04;
+      state.yeti.x += dx * 0.025;
 
       if (state.yeti.y > player.y - 20) {
         state.player.state = 'crashed';
@@ -371,8 +371,9 @@ export const GameCanvas: React.FC = () => {
     const { player, obstacles, yeti } = stateRef.current;
 
     // --- Camera ---
-    // Keep player centered and at a fixed relative position from top
-    const cameraY = player.y - (150 / scale);
+    // Keep player centered horizontally and positioned lower on screen to see more ahead
+    const playerScreenOffset = virtualHeight * 0.2; // Player at 20% from top (was ~15%)
+    const cameraY = player.y - playerScreenOffset;
     const cameraX = player.x - virtualWidth / 2;
 
     const toScreen = (wx: number, wy: number) => ({
