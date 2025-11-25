@@ -1,9 +1,15 @@
 export enum GameState {
   MENU = 'MENU',
+  COUNTDOWN = 'COUNTDOWN',
   PLAYING = 'PLAYING',
   GAME_OVER = 'GAME_OVER',
   VICTORY = 'VICTORY',
   PAUSED = 'PAUSED'
+}
+
+export enum Difficulty {
+  EASY = 'EASY',
+  HARD = 'HARD'
 }
 
 export interface Player {

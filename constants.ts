@@ -5,13 +5,13 @@ export const GAME_CONFIG = {
   ACCELERATION: 0.1,
   DECELERATION: 0.05,
   TURN_SPEED: 0.8,
-  CANVAS_WIDTH: 800,
-  CANVAS_HEIGHT: 600,
-  TRACK_WIDTH: 800,
-  VIEW_DISTANCE: 1500,
+  CANVAS_WIDTH: 1200,
+  CANVAS_HEIGHT: 1000,
+  TRACK_WIDTH: 1000,
+  VIEW_DISTANCE: 2000,
   OBSTACLE_DENSITY: 0.05, // Probability per row
-  TRACK_LENGTH: 2000, // Length of the run in meters
-  PUB_Y: 2080, // Location of the lodge
+  TRACK_LENGTH: 25000, // Length of the run in meters
+  PUB_Y: 25200, // Location of the lodge
 };
 
 export const COLORS = {
