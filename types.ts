@@ -49,4 +49,5 @@ export interface LeaderboardEntry {
   time: number;
   date: string;
   difficulty?: string;
+  distance?: number;
 }

@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameState, Player, Obstacle, ObstacleType, GameStats, LeaderboardEntry, Difficulty } from '../types';
 import { GAME_CONFIG, COLORS } from '../constants';
 import { getSkiCoachCommentary } from '../services/geminiService';
-import { Play, RotateCcw, Trophy, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
+import { audioService } from '../services/audioService';
+import { Play, RotateCcw, Trophy, ChevronLeft, ChevronRight, Flame, Volume2, VolumeX } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 // --- Game Logic Helpers ---
@@ -25,6 +26,7 @@ export const GameCanvas: React.FC = () => {
   const [stats, setStats] = useState<GameStats>({ score: 0, distance: 0, topSpeed: 0, causeOfDeath: null });
   const [coachComment, setCoachComment] = useState<string>("");
   const [isLoadingCoach, setIsLoadingCoach] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
 
   // Leaderboard State
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -86,21 +88,24 @@ export const GameCanvas: React.FC = () => {
     const newEntry: LeaderboardEntry = {
       name: playerName.trim().substring(0, 10),
       time: stats.time || 0,
-      date: new Date().toLocaleDateString()
+      date: new Date().toLocaleDateString(),
+      difficulty: difficulty === Difficulty.HARD ? 'HARD' : 'EASY',
+      distance: Math.floor(stats.distance || 0)
     };
 
     if (supabase) {
       // Save to Supabase
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from('leaderboard')
         .insert({
           name: newEntry.name,
           time: newEntry.time,
-          difficulty: difficulty === Difficulty.HARD ? 'HARD' : 'EASY'
+          difficulty: newEntry.difficulty,
+          distance: newEntry.distance
         });
 
       if (error) {
-        console.error('Error saving to leaderboard:', error);
+        console.error('Error saving to Supabase leaderboard:', error);
         // Fallback to localStorage on error
         const newBoard = [...leaderboard, newEntry]
           .sort((a, b) => a.time - b.time)
@@ -108,15 +113,17 @@ export const GameCanvas: React.FC = () => {
         setLeaderboard(newBoard);
         localStorage.setItem('nileMileLeaderboard', JSON.stringify(newBoard));
       } else {
+        console.log('Successfully saved to Supabase leaderboard');
         // Reload leaderboard from Supabase
-        const { data } = await supabase
+        const { data: freshData, error: fetchError } = await supabase
           .from('leaderboard')
           .select('*')
           .order('time', { ascending: true })
           .limit(10);
-
-        if (data) {
-          setLeaderboard(data.map(entry => ({
+        if (fetchError) {
+          console.error('Error fetching leaderboard after insert:', fetchError);
+        } else if (freshData) {
+          setLeaderboard(freshData.map(entry => ({
             name: entry.name,
             time: entry.time,
             date: new Date(entry.created_at).toLocaleDateString(),
@@ -275,6 +282,7 @@ export const GameCanvas: React.FC = () => {
       if (e.key === 'Escape') {
         // Return to menu from any state
         setGameState(GameState.MENU);
+        audioService.playMenuTheme();
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
@@ -282,6 +290,7 @@ export const GameCanvas: React.FC = () => {
   }, [gameState, startGame]);
 
   const gameOver = async (cause: string) => {
+    audioService.playGameOver();
     setGameState(GameState.GAME_OVER);
     const finalStats = {
       score: Math.floor(stateRef.current.player.y),
@@ -299,6 +308,7 @@ export const GameCanvas: React.FC = () => {
   };
 
   const finishGame = () => {
+    audioService.playVictory();
     setGameState(GameState.VICTORY);
     const finalTime = Date.now() - stateRef.current.startTime;
     const finalStats = {
@@ -391,13 +401,11 @@ export const GameCanvas: React.FC = () => {
 
     // --- Yeti Logic ---
     // Yeti only appears in HARD mode or late in EASY
-    if (player.y > 5000 && player.y < GAME_CONFIG.TRACK_LENGTH - 500 && !state.yeti.active) {
-      // Only aggressive Yeti in Hard Mode
-      if (difficulty === Difficulty.HARD || player.y > 15000) {
-        state.yeti.active = true;
-        state.yeti.y = player.y - 800;
-        state.yeti.x = player.x;
-      }
+    if (!state.yeti.active && player.y > GAME_CONFIG.YETI_START_DISTANCE) {
+      state.yeti.active = true;
+      state.yeti.y = player.y - 300; // Start 300px behind
+      state.yeti.x = player.x; // Start aligned with player
+      audioService.playYetiChase();
     }
 
     if (state.yeti.active) {
@@ -783,6 +791,19 @@ export const GameCanvas: React.FC = () => {
 
       {/* Scanline Effect */}
       <div className="scanlines pointer-events-none"></div>
+      {/* UI Overlay */}
+
+      {/* Mute Button */}
+      <button
+        onClick={async () => {
+          await audioService.initialize();
+          const muted = audioService.toggleMute();
+          setIsMuted(muted);
+        }}
+        className="absolute top-4 right-4 z-50 p-2 bg-black/50 rounded-full text-white hover:bg-black/70 transition-colors"
+      >
+        {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
+      </button>
 
       {/* Mobile Controls */}
       <div className="absolute bottom-6 left-0 w-full flex justify-between px-8 pb-4 md:hidden pointer-events-auto z-20">
@@ -859,6 +880,63 @@ export const GameCanvas: React.FC = () => {
               <p className="flex justify-between text-red-300"><span>CAUSE:</span> <span>{stats.causeOfDeath}</span></p>
             </div>
 
+            {!hasSubmitted ? (
+              <div className="border-t border-slate-600 pt-4 mt-4 mb-4">
+                <label className="block text-xs font-retro text-slate-400 mb-2">ENTER NAME FOR LEADERBOARD</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    maxLength={10}
+                    className="bg-slate-900 border border-slate-600 text-white px-4 py-2 flex-1 font-mono uppercase focus:border-yellow-400 outline-none"
+                    placeholder="AAA"
+                  />
+                  <button
+                    onClick={saveToLeaderboard}
+                    disabled={!playerName}
+                    className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-4 py-2 font-bold font-retro text-xs"
+                  >
+                    SUBMIT
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="border-t border-slate-600 pt-4 mt-4 mb-4 text-center text-green-400 font-retro text-sm">
+                SCORE SUBMITTED!
+              </div>
+            )}
+
+            <div className="border-t border-slate-600 pt-4">
+              <h3 className="flex items-center gap-2 text-yellow-400 font-retro text-xs mb-3">
+                <Trophy size={14} /> LEADERBOARD
+              </h3>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {leaderboard.length === 0 ? (
+                  <p className="text-slate-500 text-xs italic">No records yet. Be the first!</p>
+                ) : (
+                  leaderboard.map((entry, idx) => (
+                    <div key={idx} className={`flex justify-between items-center text-sm font-mono ${entry.name === playerName && hasSubmitted ? 'text-yellow-300' : 'text-slate-300'}`}>
+                      <div className="flex items-center gap-2">
+                        <span>{idx + 1}. {entry.name}</span>
+                        {entry.difficulty && (
+                          <span className={`text-xs px-1 py-0.5 rounded ${entry.difficulty === 'HARD' ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                            {entry.difficulty === 'HARD' ? 'H' : 'E'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-4">
+                        {entry.distance !== undefined && entry.distance < GAME_CONFIG.TRACK_LENGTH && (
+                          <span className="text-slate-500 text-xs">{Math.floor(entry.distance)}ft</span>
+                        )}
+                        <span>{(entry.time / 1000).toFixed(2)}s</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             <div className="border-t border-slate-600 pt-4 mt-4">
               <h3 className="text-yellow-400 font-retro text-sm mb-2">CHUCK'S TIPS:</h3>
               <p className="italic text-lg leading-relaxed text-slate-200 min-h-[60px]">
@@ -875,7 +953,10 @@ export const GameCanvas: React.FC = () => {
               <RotateCcw size={24} /> TRY AGAIN
             </button>
             <button
-              onClick={() => setGameState(GameState.MENU)}
+              onClick={() => {
+                setGameState(GameState.MENU);
+                audioService.playMenuTheme();
+              }}
               className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 border-4 border-slate-500 font-retro transition-transform hover:scale-105"
             >
               MENU
@@ -944,7 +1025,12 @@ export const GameCanvas: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <span>{(entry.time / 1000).toFixed(2)}s</span>
+                      <div className="flex gap-4">
+                        {entry.distance !== undefined && entry.distance < GAME_CONFIG.TRACK_LENGTH && (
+                          <span className="text-slate-500 text-xs">{Math.floor(entry.distance)}ft</span>
+                        )}
+                        <span>{(entry.time / 1000).toFixed(2)}s</span>
+                      </div>
                     </div>
                   ))
                 )}
