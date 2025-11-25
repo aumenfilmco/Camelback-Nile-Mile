@@ -10,7 +10,7 @@ export const GAME_CONFIG = {
   TRACK_WIDTH: 1000,
   VIEW_DISTANCE: 2000,
   OBSTACLE_DENSITY: 0.05, // Probability per row
-  TRACK_LENGTH: 25000, // Length of the run in meters
+  TRACK_LENGTH: 25000, // Length of the run in feet (approximately 1.4 miles)
   PUB_Y: 25200, // Location of the lodge
 };
 
