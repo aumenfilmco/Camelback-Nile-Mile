@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameState, Player, Obstacle, ObstacleType, GameStats, LeaderboardEntry, Difficulty } from '../types';
 import { GAME_CONFIG, COLORS } from '../constants';
 import { getSkiCoachCommentary } from '../services/geminiService';
-import { Play, RotateCcw, Trophy, ChevronLeft, ChevronRight, Flame, Skull } from 'lucide-react';
+import { Play, RotateCcw, Trophy, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 
 // --- Game Logic Helpers ---
 
