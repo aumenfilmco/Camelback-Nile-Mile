@@ -10,6 +10,8 @@ export const GAME_CONFIG = {
   TRACK_WIDTH: 800,
   VIEW_DISTANCE: 1500,
   OBSTACLE_DENSITY: 0.05, // Probability per row
+  TRACK_LENGTH: 2000, // Length of the run in meters
+  PUB_Y: 2080, // Location of the lodge
 };
 
 export const COLORS = {
@@ -23,4 +25,8 @@ export const COLORS = {
   YETI_FUR: '#f1f5f9', // slate-100
   YETI_SKIN: '#94a3b8', // slate-400
   TRACK_BORDER: '#cbd5e1', // slate-300
+  LODGE_WOOD: '#451a03', // amber-950
+  LODGE_ROOF: '#7f1d1d', // red-900
+  FIRE_ORANGE: '#f97316', // orange-500
+  FIRE_YELLOW: '#fbbf24', // amber-400
 };

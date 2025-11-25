@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { GameState, Player, Obstacle, ObstacleType, GameStats } from '../types';
+import { GameState, Player, Obstacle, ObstacleType, GameStats, LeaderboardEntry } from '../types';
 import { GAME_CONFIG, COLORS } from '../constants';
 import { getSkiCoachCommentary } from '../services/geminiService';
-import { Play, RotateCcw, Award } from 'lucide-react';
+import { Play, RotateCcw, Trophy, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 
 // --- Game Logic Helpers ---
 
@@ -10,7 +10,6 @@ import { Play, RotateCcw, Award } from 'lucide-react';
 // z is distance in meters (pixels in game coordinates)
 const getTrackOffset = (z: number): number => {
   // Broad, sweeping turns for the "Nile Mile"
-  // Frequency reduced for wider, longer turns
   return Math.sin(z * 0.0015) * 600;
 };
 
@@ -23,6 +22,11 @@ export const GameCanvas: React.FC = () => {
   const [stats, setStats] = useState<GameStats>({ score: 0, distance: 0, topSpeed: 0, causeOfDeath: null });
   const [coachComment, setCoachComment] = useState<string>("");
   const [isLoadingCoach, setIsLoadingCoach] = useState(false);
+  
+  // Leaderboard State
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [playerName, setPlayerName] = useState("");
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   // Mutable Game State (Refs for performance to avoid React re-renders during loop)
   const stateRef = useRef({
@@ -34,13 +38,47 @@ export const GameCanvas: React.FC = () => {
     yeti: { active: false, x: 0, y: -1000, speed: 0 }
   });
 
+  // Load Leaderboard on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('nileMileLeaderboard');
+    if (saved) {
+      try {
+        setLeaderboard(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to load leaderboard");
+      }
+    }
+  }, []);
+
+  const saveToLeaderboard = () => {
+    if (!playerName.trim() || hasSubmitted) return;
+    
+    const newEntry: LeaderboardEntry = {
+      name: playerName.trim().substring(0, 10),
+      time: stats.time || 0,
+      date: new Date().toLocaleDateString()
+    };
+    
+    const newBoard = [...leaderboard, newEntry]
+      .sort((a, b) => a.time - b.time)
+      .slice(0, 5); // Keep top 5
+      
+    setLeaderboard(newBoard);
+    localStorage.setItem('nileMileLeaderboard', JSON.stringify(newBoard));
+    setHasSubmitted(true);
+  };
+
   const generateObstacles = useCallback((startY: number, endY: number) => {
     const { obstacles, lastObstacleY } = stateRef.current;
     
-    // Ensure we don't generate too densely
+    // Stop generating obstacles near the finish line (Lodge area)
+    const MAX_GEN_Y = GAME_CONFIG.TRACK_LENGTH - 300;
+    
     let currentY = Math.max(startY, lastObstacleY + 40);
 
     while (currentY < endY) {
+      if (currentY > MAX_GEN_Y) break;
+
       // Determine track bounds at this Y
       const trackCenter = getTrackOffset(currentY);
       const halfWidth = GAME_CONFIG.TRACK_WIDTH / 2;
@@ -122,6 +160,8 @@ export const GameCanvas: React.FC = () => {
     
     setStats({ score: 0, distance: 0, topSpeed: 0, causeOfDeath: null });
     setCoachComment("");
+    setHasSubmitted(false);
+    setPlayerName("");
     setGameState(GameState.PLAYING);
   }, [generateObstacles]);
 
@@ -149,7 +189,7 @@ export const GameCanvas: React.FC = () => {
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
-        if (gameState === GameState.MENU || gameState === GameState.GAME_OVER) {
+        if (gameState === GameState.MENU || gameState === GameState.GAME_OVER || gameState === GameState.VICTORY) {
           startGame();
         }
       }
@@ -164,7 +204,8 @@ export const GameCanvas: React.FC = () => {
       score: Math.floor(stateRef.current.player.y),
       distance: stateRef.current.player.y,
       topSpeed: stats.topSpeed,
-      causeOfDeath: cause
+      causeOfDeath: cause,
+      time: Date.now() - stateRef.current.startTime
     };
     setStats(finalStats);
     
@@ -174,11 +215,30 @@ export const GameCanvas: React.FC = () => {
     setIsLoadingCoach(false);
   };
 
+  const finishGame = () => {
+    setGameState(GameState.VICTORY);
+    const finalTime = Date.now() - stateRef.current.startTime;
+    const finalStats = {
+      score: Math.floor(stateRef.current.player.y),
+      distance: stateRef.current.player.y,
+      topSpeed: stats.topSpeed,
+      causeOfDeath: null,
+      time: finalTime
+    };
+    setStats(finalStats);
+  };
+
   const update = () => {
     if (gameState !== GameState.PLAYING) return;
     
     const state = stateRef.current;
     const { player, keys } = state;
+
+    // --- Win Condition ---
+    if (player.y >= GAME_CONFIG.TRACK_LENGTH) {
+      finishGame();
+      return;
+    }
 
     // --- Movement Physics ---
     // Acceleration
@@ -235,7 +295,8 @@ export const GameCanvas: React.FC = () => {
     }
 
     // --- Yeti Logic ---
-    if (player.y > 3000 && !state.yeti.active) {
+    // Yeti only appears before the end
+    if (player.y > 3000 && player.y < GAME_CONFIG.TRACK_LENGTH - 200 && !state.yeti.active) {
        state.yeti.active = true;
        state.yeti.y = player.y - 800;
        state.yeti.x = player.x;
@@ -305,7 +366,8 @@ export const GameCanvas: React.FC = () => {
 
     renderList.forEach(entity => {
       const pos = toScreen(entity.x, entity.y);
-      if (pos.y < -100 || pos.y > height + 100) return;
+      // Culling
+      if (pos.y < -300 || pos.y > height + 100) return;
 
       if (entity.type === 'PLAYER') {
          drawPlayer(ctx, pos.x, pos.y, player.direction, player.state === 'crashed');
@@ -320,11 +382,17 @@ export const GameCanvas: React.FC = () => {
       }
     });
 
+    // --- Draw "Trail's End" Pub ---
+    const pubPos = toScreen(getTrackOffset(GAME_CONFIG.PUB_Y), GAME_CONFIG.PUB_Y);
+    if (pubPos.y > -200 && pubPos.y < height + 200) {
+       drawPub(ctx, pubPos.x, pubPos.y);
+    }
+
     // Score Overlay
     if (gameState === GameState.PLAYING) {
       ctx.fillStyle = '#1e293b';
       ctx.font = '16px "Press Start 2P"';
-      ctx.fillText(`${Math.floor(player.y)}m`, 20, 40);
+      ctx.fillText(`${Math.floor(player.y)}m / ${GAME_CONFIG.TRACK_LENGTH}m`, 20, 40);
       
       // Speedometer
       ctx.fillStyle = player.speed > 10 ? '#ef4444' : '#10b981';
@@ -445,6 +513,57 @@ export const GameCanvas: React.FC = () => {
     ctx.fillRect(x - 6, y - 18, 12, 2);
   };
 
+  const drawPub = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+    // Lodge Body
+    ctx.fillStyle = COLORS.LODGE_WOOD;
+    ctx.fillRect(x - 100, y - 60, 200, 60);
+    
+    // Roof
+    ctx.fillStyle = COLORS.LODGE_ROOF;
+    ctx.beginPath();
+    ctx.moveTo(x - 110, y - 60);
+    ctx.lineTo(x, y - 110);
+    ctx.lineTo(x + 110, y - 60);
+    ctx.fill();
+
+    // Door
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x - 20, y - 40, 40, 40);
+    
+    // Sign
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(x - 60, y - 90, 120, 20);
+    ctx.fillStyle = '#451a03';
+    ctx.font = '10px "Press Start 2P"';
+    ctx.fillText("TRAIL'S END", x - 55, y - 76);
+
+    // Fire Pits
+    const drawFire = (fx: number, fy: number) => {
+      ctx.fillStyle = '#444';
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, 20, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      
+      const flicker = Math.sin(Date.now() / 100) * 5;
+      ctx.fillStyle = COLORS.FIRE_ORANGE;
+      ctx.beginPath();
+      ctx.moveTo(fx - 10, fy);
+      ctx.lineTo(fx, fy - 30 + flicker);
+      ctx.lineTo(fx + 10, fy);
+      ctx.fill();
+      
+      ctx.fillStyle = COLORS.FIRE_YELLOW;
+      ctx.beginPath();
+      ctx.moveTo(fx - 5, fy);
+      ctx.lineTo(fx, fy - 20 - flicker);
+      ctx.lineTo(fx + 5, fy);
+      ctx.fill();
+    };
+
+    drawFire(x - 150, y);
+    drawFire(x + 150, y);
+  };
+
   const loop = (time: number) => {
     update();
     draw();
@@ -468,90 +587,157 @@ export const GameCanvas: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // --- Mobile Controls ---
+  const handleTouchStart = (dir: 'left' | 'right') => {
+    if (dir === 'left') stateRef.current.keys.left = true;
+    else stateRef.current.keys.right = true;
+  };
+  const handleTouchEnd = (dir: 'left' | 'right') => {
+    if (dir === 'left') stateRef.current.keys.left = false;
+    else stateRef.current.keys.right = false;
+  };
+
   return (
     <div className="relative w-full h-screen bg-slate-900 overflow-hidden">
       <canvas ref={canvasRef} className="block w-full h-full" />
-      <div className="scanlines"></div>
+      
+      {/* Scanline Effect */}
+      <div className="scanlines pointer-events-none"></div>
 
-      {/* Start Screen */}
+      {/* Mobile Controls */}
+      <div className="absolute bottom-4 left-0 w-full flex justify-between px-4 pb-4 md:hidden pointer-events-auto z-20">
+         <button 
+           className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:bg-white/40 transition-colors touch-none"
+           onPointerDown={() => handleTouchStart('left')}
+           onPointerUp={() => handleTouchEnd('left')}
+           onPointerLeave={() => handleTouchEnd('left')}
+         >
+            <ChevronLeft size={48} className="text-white" />
+         </button>
+         <button 
+           className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:bg-white/40 transition-colors touch-none"
+           onPointerDown={() => handleTouchStart('right')}
+           onPointerUp={() => handleTouchEnd('right')}
+           onPointerLeave={() => handleTouchEnd('right')}
+         >
+            <ChevronRight size={48} className="text-white" />
+         </button>
+      </div>
+
+      {/* Main Menu */}
       {gameState === GameState.MENU && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50">
-          <div className="text-center animate-bounce-slow">
-            <h1 className="text-4xl font-retro text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-white mb-8 drop-shadow-[4px_4px_0_rgba(0,0,0,1)]">
-              Camelback Resort presents:<br/>
-              <span className="text-6xl text-white block mt-4 text-shadow-lg">NILE MILE</span>
-            </h1>
-            <p className="text-blue-200 mb-8 font-retro text-xs uppercase tracking-widest">
-              Can you survive the switchbacks?
-            </p>
-            
-            <button 
-              onClick={startGame}
-              className="group relative px-8 py-4 bg-red-500 hover:bg-red-600 transition-all active:translate-y-1 shadow-[4px_4px_0_rgba(0,0,0,1)] border-2 border-black"
-            >
-              <div className="flex items-center gap-4">
-                <Play className="w-6 h-6 text-white" />
-                <span className="font-retro text-white">DROP IN (ENTER)</span>
-              </div>
-            </button>
-          </div>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 text-white z-30">
+          <h1 className="text-4xl md:text-6xl text-yellow-400 font-retro mb-4 text-center px-4 leading-tight">
+             Camelback Resort presents:<br/><span className="text-white">NILE MILE</span>
+          </h1>
+          <p className="text-lg mb-8 text-slate-300">Dodge trees, survive the Yeti, reach Trail's End!</p>
+          <button 
+            onClick={startGame}
+            className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 px-8 rounded-none border-4 border-yellow-600 font-retro text-xl transition-transform hover:scale-105"
+          >
+            <Play size={24} /> START RUN
+          </button>
+          <p className="mt-4 text-sm text-slate-400 animate-pulse">Press ENTER to Start</p>
         </div>
       )}
 
       {/* Game Over Screen */}
       {gameState === GameState.GAME_OVER && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-50 p-4">
-          <div className="max-w-md w-full bg-slate-800 border-4 border-slate-600 p-6 shadow-2xl rounded-lg">
-            <h2 className="text-4xl font-retro text-red-500 text-center mb-6 drop-shadow-md">
-              WIPEOUT!
-            </h2>
-            
-            <div className="grid grid-cols-2 gap-4 mb-6 font-mono text-sm">
-              <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                <div className="text-slate-400 text-xs">DISTANCE</div>
-                <div className="text-yellow-400 text-xl">{Math.floor(stats.distance)}m</div>
-              </div>
-              <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                <div className="text-slate-400 text-xs">TOP SPEED</div>
-                <div className="text-green-400 text-xl">{Math.floor(stats.topSpeed)} km/h</div>
-              </div>
-            </div>
-            
-            {/* Chuck's Tips Section */}
-            <div className="bg-blue-900/30 border border-blue-500/50 p-4 rounded mb-6 relative">
-              <div className="absolute -top-3 -left-3 bg-blue-600 text-white text-xs px-2 py-1 font-bold rounded shadow border border-black transform -rotate-3">
-                CHUCK'S TIPS
-              </div>
-              {isLoadingCoach ? (
-                <div className="flex items-center gap-2 text-blue-300 text-sm animate-pulse">
-                  <div className="w-2 h-2 bg-blue-300 rounded-full"></div>
-                  Calling Chuck...
-                </div>
-              ) : (
-                <p className="text-blue-100 italic text-sm leading-relaxed">
-                  "{coachComment}"
-                </p>
-              )}
-            </div>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-900/80 backdrop-blur-sm text-white z-30 p-4">
+          <h2 className="text-4xl font-retro text-red-400 mb-6">WIPEOUT!</h2>
+          
+          <div className="bg-slate-800 p-6 rounded-lg border-2 border-slate-600 max-w-md w-full shadow-2xl">
+             <div className="mb-4 space-y-2 font-mono text-sm text-slate-300">
+               <p className="flex justify-between"><span>DISTANCE:</span> <span className="text-white">{Math.floor(stats.distance)}m</span></p>
+               <p className="flex justify-between"><span>SCORE:</span> <span className="text-white">{stats.score}</span></p>
+               <p className="flex justify-between"><span>TOP SPEED:</span> <span className="text-white">{Math.floor(stats.topSpeed)} km/h</span></p>
+               <p className="flex justify-between text-red-300"><span>CAUSE:</span> <span>{stats.causeOfDeath}</span></p>
+             </div>
 
-            <button 
-              onClick={startGame}
-              className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-retro text-sm transition-colors shadow-[4px_4px_0_rgba(0,0,0,1)] border-2 border-black flex justify-center items-center gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              AGAIN (ENTER)
-            </button>
+             <div className="border-t border-slate-600 pt-4 mt-4">
+                <h3 className="text-yellow-400 font-retro text-sm mb-2">CHUCK'S TIPS:</h3>
+                <p className="italic text-lg leading-relaxed text-slate-200">
+                  {isLoadingCoach ? "Chuck is radioing in..." : `"${coachComment}"`}
+                </p>
+             </div>
           </div>
+
+          <button 
+            onClick={startGame}
+            className="mt-8 flex items-center gap-2 bg-white hover:bg-slate-200 text-red-900 font-bold py-3 px-8 border-4 border-slate-300 font-retro transition-transform hover:scale-105"
+          >
+            <RotateCcw size={24} /> TRY AGAIN
+          </button>
         </div>
       )}
-      
-      {/* Mobile Controls */}
-      {gameState === GameState.PLAYING && (
-        <div className="absolute bottom-10 left-0 right-0 text-center pointer-events-none md:hidden opacity-50">
-          <div className="flex justify-between px-10">
-             <div className="w-16 h-16 rounded-full border-2 border-white/30 bg-white/10 flex items-center justify-center text-white">L</div>
-             <div className="w-16 h-16 rounded-full border-2 border-white/30 bg-white/10 flex items-center justify-center text-white">R</div>
+
+      {/* Victory Screen */}
+      {gameState === GameState.VICTORY && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-green-900/90 backdrop-blur-md text-white z-30 p-4 overflow-y-auto">
+          <div className="text-center mb-6">
+             <Flame className="w-12 h-12 text-orange-500 mx-auto mb-2 animate-bounce" />
+             <h2 className="text-3xl md:text-5xl font-retro text-yellow-400">TRAIL'S END</h2>
+             <p className="text-green-200 mt-2">You survived Nile Mile!</p>
           </div>
+          
+          <div className="bg-slate-800 p-6 rounded-lg border-2 border-yellow-600 max-w-md w-full shadow-2xl">
+             <div className="text-center mb-6">
+                <p className="text-slate-400 text-sm">FINAL TIME</p>
+                <p className="text-4xl font-mono text-white">{(stats.time! / 1000).toFixed(2)}s</p>
+             </div>
+
+             {!hasSubmitted ? (
+               <div className="mb-6">
+                  <label className="block text-xs font-retro text-slate-400 mb-2">ENTER NAME FOR LEADERBOARD</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={playerName}
+                      onChange={(e) => setPlayerName(e.target.value)}
+                      maxLength={10}
+                      className="bg-slate-900 border border-slate-600 text-white px-4 py-2 flex-1 font-mono uppercase focus:border-yellow-400 outline-none"
+                      placeholder="AAA"
+                    />
+                    <button 
+                       onClick={saveToLeaderboard}
+                       disabled={!playerName}
+                       className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-4 py-2 font-bold font-retro text-xs"
+                    >
+                      SUBMIT
+                    </button>
+                  </div>
+               </div>
+             ) : (
+                <div className="mb-6 text-center text-green-400 font-retro text-sm">
+                   SCORE SUBMITTED!
+                </div>
+             )}
+
+             <div className="border-t border-slate-600 pt-4">
+                <h3 className="flex items-center gap-2 text-yellow-400 font-retro text-xs mb-3">
+                   <Trophy size={14} /> LEADERBOARD
+                </h3>
+                <div className="space-y-2">
+                   {leaderboard.length === 0 ? (
+                      <p className="text-slate-500 text-xs italic">No records yet. Be the first!</p>
+                   ) : (
+                      leaderboard.map((entry, idx) => (
+                        <div key={idx} className={`flex justify-between text-sm font-mono ${entry.name === playerName && hasSubmitted ? 'text-yellow-300' : 'text-slate-300'}`}>
+                           <span>{idx + 1}. {entry.name}</span>
+                           <span>{(entry.time / 1000).toFixed(2)}s</span>
+                        </div>
+                      ))
+                   )}
+                </div>
+             </div>
+          </div>
+
+          <button 
+            onClick={startGame}
+            className="mt-8 flex items-center gap-2 bg-white hover:bg-slate-200 text-green-900 font-bold py-3 px-8 border-4 border-slate-300 font-retro transition-transform hover:scale-105"
+          >
+            <RotateCcw size={24} /> SKI AGAIN
+          </button>
         </div>
       )}
     </div>

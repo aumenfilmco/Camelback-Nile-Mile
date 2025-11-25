@@ -2,6 +2,7 @@ export enum GameState {
   MENU = 'MENU',
   PLAYING = 'PLAYING',
   GAME_OVER = 'GAME_OVER',
+  VICTORY = 'VICTORY',
   PAUSED = 'PAUSED'
 }
 
@@ -34,4 +35,11 @@ export interface GameStats {
   distance: number;
   topSpeed: number;
   causeOfDeath: string | null;
+  time?: number; // Time taken in ms
+}
+
+export interface LeaderboardEntry {
+  name: string;
+  time: number;
+  date: string;
 }
