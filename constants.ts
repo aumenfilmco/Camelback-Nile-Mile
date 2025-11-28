@@ -12,7 +12,7 @@ export const GAME_CONFIG = {
   OBSTACLE_DENSITY: 0.05, // Probability per row
   TRACK_LENGTH: 25000, // Length of the run in feet (approximately 1.4 miles)
   PUB_Y: 25200, // Location of the lodge
-  YETI_START_DISTANCE: 5000,
+  YETI_START_DISTANCE: 15000,
 };
 
 export const COLORS = {

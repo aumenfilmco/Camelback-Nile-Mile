@@ -400,16 +400,18 @@ export const GameCanvas: React.FC = () => {
     }
 
     // --- Yeti Logic ---
-    // Yeti only appears in HARD mode or late in EASY
-    if (!state.yeti.active && player.y > GAME_CONFIG.YETI_START_DISTANCE) {
+    // Yeti only appears in HARD mode or very late in EASY mode
+    const yetiStartDistance = difficulty === Difficulty.EASY ? 20000 : GAME_CONFIG.YETI_START_DISTANCE;
+    if (!state.yeti.active && player.y > yetiStartDistance) {
       state.yeti.active = true;
-      state.yeti.y = player.y - 300; // Start 300px behind
+      state.yeti.y = player.y - 800; // Start 800px behind to give player more time
       state.yeti.x = player.x; // Start aligned with player
       audioService.playYetiChase();
     }
 
     if (state.yeti.active) {
-      const yetiSpeedBonus = difficulty === Difficulty.EASY ? 0.2 : 0.4;
+      // Reduced speed bonus to make it more escapable
+      const yetiSpeedBonus = difficulty === Difficulty.EASY ? 0.1 : 0.15;
       state.yeti.speed = player.speed + yetiSpeedBonus;
       state.yeti.y += state.yeti.speed;
 
